@@ -1,0 +1,1 @@
+# komikku-test-sync
