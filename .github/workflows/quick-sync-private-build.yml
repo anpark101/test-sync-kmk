@@ -9,6 +9,12 @@ name: Build Komikku Quick Sync (Private)
 
 'on':
   workflow_dispatch:
+  push:
+    branches:
+      - arena/01a0feed-komikku-test-sync
+    paths:
+      - 'quick-sync-kit/**'
+      - '.github/workflows/quick-sync-private-build.yml'
 
 permissions:
   contents: read
