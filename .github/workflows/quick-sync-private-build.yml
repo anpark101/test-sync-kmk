@@ -49,43 +49,98 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # v4.0.4: the old pinned action tried to install the removed "tools"
+      # SDK package and failed. This one installs cmdline-tools 15859902.
       - name: Set up Android tools
-        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
 
       - name: Install the required Android SDK
-        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            sdkmanager --version
+            sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+            sdkmanager --list_installed | grep -E 'platforms;android-36|build-tools;35.0.0'
+          } 2>&1 | tee step-sdk.log || {
+            echo -n "::error title=Android SDK setup failed::"
+            tail -c 6000 step-sdk.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Verify the Quick Sync kit files are intact
         shell: bash
-        run: (cd quick-sync-kit && sha256sum -c SHA256SUMS)
+        run: |
+          set -o pipefail
+          (cd quick-sync-kit && sha256sum -c SHA256SUMS) 2>&1 | tee step-kit.log || {
+            echo -n "::error title=Quick Sync kit corrupted::"
+            tail -c 3000 step-kit.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Apply the prepared Quick Sync changes
         shell: bash
-        run: python3 quick-sync-kit/apply_patch.py upstream
+        run: |
+          set -o pipefail
+          python3 quick-sync-kit/apply_patch.py upstream 2>&1 | tee step-patch.log || {
+            echo -n "::error title=Patch application failed (upstream mismatch)::"
+            tail -c 6000 step-patch.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Test the reading-progress edit clocks
         working-directory: upstream
-        run: >-
-          ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8'
-          -Pkotlin.compiler.execution.strategy=in-process
-          :domain:testReleaseUnitTest --tests 'tachiyomi.domain.sync.ProgressStampTest'
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            ./gradlew --no-daemon --max-workers=1 \
+              -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
+              -Pkotlin.compiler.execution.strategy=in-process \
+              :domain:testReleaseUnitTest --tests 'tachiyomi.domain.sync.ProgressStampTest'
+          } 2>&1 | tee ../step-domain-tests.log || {
+            echo -n "::error title=ProgressStamp tests failed::"
+            tail -c 6000 ../step-domain-tests.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Build the separate test app
         working-directory: upstream
-        run: >-
-          ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8'
-          -Pkotlin.compiler.execution.strategy=in-process
-          -Pdisable-code-shrink :app:assemblePreview
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            ./gradlew --no-daemon --max-workers=1 \
+              -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
+              -Pkotlin.compiler.execution.strategy=in-process \
+              -Pdisable-code-shrink :app:assemblePreview
+          } 2>&1 | tee ../step-assemble.log || {
+            echo -n "::error title=App compilation failed::"
+            tail -c 8000 ../step-assemble.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Test page and library conflict merging
         working-directory: upstream
-        run: >-
-          ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8'
-          -Pkotlin.compiler.execution.strategy=in-process
-          :app:testPreviewUnitTest --tests 'eu.kanade.tachiyomi.data.sync.QuickSyncMergeTest'
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            ./gradlew --no-daemon --max-workers=1 \
+              -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
+              -Pkotlin.compiler.execution.strategy=in-process \
+              :app:testPreviewUnitTest --tests 'eu.kanade.tachiyomi.data.sync.QuickSyncMergeTest'
+          } 2>&1 | tee ../step-merge-tests.log || {
+            echo -n "::error title=QuickSyncMergeTest failed::"
+            tail -c 8000 ../step-merge-tests.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Verify and package the installable APK
         shell: bash
