@@ -17,7 +17,7 @@ name: Build Komikku Quick Sync (Private)
       - '.github/workflows/quick-sync-private-build.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: komikku-quick-sync-private-build
@@ -164,6 +164,25 @@ jobs:
           path: apk-deliverable/
           retention-days: 1
           if-no-files-found: error
+
+      # Publishes from the runner (not your computer) so the APK stays
+      # downloadable from the Releases page until you delete it.
+      - name: Publish the APK to the Releases page
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='quick-sync-v0.1'
+          assets=(apk-deliverable/Komikku-Quick-Sync-0.1-test.apk apk-deliverable/SHA256.txt apk-deliverable/READ-FIRST.txt)
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title 'Komikku Quick Sync 0.1 (test build)' \
+              --notes 'Unofficial experimental build of Komikku v1.14.1 with the Quick Sync feature: automatic library and page-level reading-progress sync between two devices through your own WebDAV/SyncYomi folder. Install the SAME apk on BOTH phones. Keep your original Komikku and its backups. Use a dedicated test folder for sync data. Debug-signed trial build.' \
+              "${assets[@]}"
+          fi
 
       - name: Save test reports if the build fails
         if: failure()
