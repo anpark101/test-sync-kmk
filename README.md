@@ -44,9 +44,8 @@ The APK (the installable app file) is built **in the cloud by GitHub** — you
 never need a computer.
 
 1. Open this repository on GitHub (the `komikku-test-sync` repo).
-2. Open the **Releases** section (right side of the repo page, or the link
-   below once a release exists):
-   `https://github.com/wntrskarina-ux/komikku-test-sync/releases`
+2. Open the **Releases** section — direct link:
+   [`komikku-test-sync/releases/tag/quick-sync-v0.1`](https://github.com/wntrskarina-ux/komikku-test-sync/releases/tag/quick-sync-v0.1)
 3. Download **`Komikku-Quick-Sync-0.1-test.apk`** on **each phone**.
 
 *If there is no release yet, the build has not finished — see
