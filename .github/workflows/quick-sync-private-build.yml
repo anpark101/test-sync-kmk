@@ -1,6 +1,7 @@
-# Prepared PRIVATE-repository build file. Upload unchanged into .github/workflows/.
+# Builds the experimental "Komikku Sync Lab" APK in the cloud.
 # Uses your account's included Actions allowance, not unlimited public-repo minutes.
-# Single worker and one-day artifacts reduce memory/storage use. No personal reading data is uploaded.
+# Single worker and short-lived artifacts reduce memory/storage use.
+# No personal reading data is uploaded.
 # No passwords, personal backups, API tokens or billing information are needed.
 # This is experimental source code, NOT an installable APK or a live sync website.
 # Both phones must install the SAME successfully built APK.
@@ -8,9 +9,15 @@ name: Build Komikku Quick Sync (Private)
 
 'on':
   workflow_dispatch:
+  push:
+    branches:
+      - arena/01a0feed-komikku-test-sync
+    paths:
+      - 'quick-sync-kit/**'
+      - '.github/workflows/quick-sync-private-build.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: komikku-quick-sync-private-build
@@ -20,13 +27,19 @@ jobs:
   build:
     name: Build and test the experimental APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 90
     steps:
-      - name: Check out the pinned upstream version
+      - name: Check out this repository (the Quick Sync kit)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Check out the pinned upstream Komikku version
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: komikku-app/komikku
           ref: e30ff83265d7affcc14e172ea9eadf469db1f4aa
+          path: upstream
           fetch-depth: 0
           persist-credentials: false
 
@@ -36,273 +49,104 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # v4.0.4: the old pinned action tried to install the removed "tools"
+      # SDK package and failed. This one installs cmdline-tools 15859902.
       - name: Set up Android tools
-        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
 
       - name: Install the required Android SDK
-        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            sdkmanager --version
+            sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+            sdkmanager --list_installed | grep -E 'platforms;android-36|build-tools;35.0.0'
+          } 2>&1 | tee step-sdk.log || {
+            echo -n "::error title=Android SDK setup failed::"
+            tail -c 6000 step-sdk.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
+
+      - name: Verify the Quick Sync kit files are intact
+        shell: bash
+        run: |
+          set -o pipefail
+          (cd quick-sync-kit && sha256sum -c SHA256SUMS) 2>&1 | tee step-kit.log || {
+            echo -n "::error title=Quick Sync kit corrupted::"
+            tail -c 3000 step-kit.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Apply the prepared Quick Sync changes
         shell: bash
         run: |
-          python3 - <<'PYBUILD'
-          import base64, hashlib, io, pathlib, zipfile, subprocess, sys
-          payload = """
-          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
-          AhQDFAAAAAgAAABDXVk6bj0lBgAAXxIAAEQAAAAAAAAAAAAAAKQBYxwAAG92ZXJsYXkvYXBwL3Ny
-          Yy9tYWluL2phdmEvZXUva2FuYWRlL3RhY2hpeW9taS9kYXRhL3N5bmMvUXVpY2tTeW5jLmt0UEsB
-          AhQDFAAAAAgAAABDXeoPzAWdBAAAkw8AAE0AAAAAAAAAAAAAAKQB6iIAAG92ZXJsYXkvYXBwL3Ny
-          Yy90ZXN0L2phdmEvZXUva2FuYWRlL3RhY2hpeW9taS9kYXRhL3N5bmMvUXVpY2tTeW5jTWVyZ2VU
-          ZXN0Lmt0UEsBAhQDFAAAAAgAAABDXUFf9kUqAwAAuQcAAEMAAAAAAAAAAAAAAKQB8icAAG92ZXJs
-          YXkvZG9tYWluL3NyYy9tYWluL2phdmEvdGFjaGl5b21pL2RvbWFpbi9zeW5jL1Byb2dyZXNzU3Rh
-          bXAua3RQSwECFAMUAAAACAAAAENdEVx6xqECAAAKCQAARwAAAAAAAAAAAAAApAF9KwAAb3Zlcmxh
-          eS9kb21haW4vc3JjL3Rlc3QvamF2YS90YWNoaXlvbWkvZG9tYWluL3N5bmMvUHJvZ3Jlc3NTdGFt
-          cFRlc3Qua3RQSwUGAAAAAAUABQAPAgAAgy4AAAAA
-          """
-          archive = base64.b64decode(payload)
-          assert hashlib.sha256(archive).hexdigest() == 'f6242fc2fe48bddf6ce25a7b093b721c9bc44a8419fa87c08d8dfa020437ed7b', 'Prepared patch checksum mismatch'
-          destination = pathlib.Path('/tmp/komikku-quick-sync-kit')
-          destination.mkdir(parents=True, exist_ok=True)
-          with zipfile.ZipFile(io.BytesIO(archive)) as z:
-              z.extractall(destination)
-          subprocess.run([sys.executable, str(destination / 'apply_patch.py'), '.'], check=True)
-          PYBUILD
+          set -o pipefail
+          python3 quick-sync-kit/apply_patch.py upstream 2>&1 | tee step-patch.log || {
+            echo -n "::error title=Patch application failed (upstream mismatch)::"
+            tail -c 6000 step-patch.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Test the reading-progress edit clocks
-        run: >-
-          ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8'
-          -Pkotlin.compiler.execution.strategy=in-process
-          :domain:testReleaseUnitTest --tests 'tachiyomi.domain.sync.ProgressStampTest'
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            ./gradlew --no-daemon --max-workers=1 \
+              -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
+              -Pkotlin.compiler.execution.strategy=in-process \
+              :domain:testReleaseUnitTest --tests 'tachiyomi.domain.sync.ProgressStampTest'
+          } 2>&1 | tee ../step-domain-tests.log || {
+            echo -n "::error title=ProgressStamp tests failed::"
+            tail -c 6000 ../step-domain-tests.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Build the separate test app
-        run: >-
-          ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8'
-          -Pkotlin.compiler.execution.strategy=in-process
-          -Pdisable-code-shrink :app:assemblePreview
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            ./gradlew --no-daemon --max-workers=1 \
+              -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
+              -Pkotlin.compiler.execution.strategy=in-process \
+              -Pdisable-code-shrink :app:assemblePreview
+          } 2>&1 | tee ../step-assemble.log || {
+            echo -n "::error title=App compilation failed::"
+            tail -c 8000 ../step-assemble.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Test page and library conflict merging
-        run: >-
-          ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8'
-          -Pkotlin.compiler.execution.strategy=in-process
-          :app:testPreviewUnitTest --tests 'eu.kanade.tachiyomi.data.sync.QuickSyncMergeTest'
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            ./gradlew --no-daemon --max-workers=1 \
+              -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
+              -Pkotlin.compiler.execution.strategy=in-process \
+              :app:testPreviewUnitTest --tests 'eu.kanade.tachiyomi.data.sync.QuickSyncMergeTest'
+          } 2>&1 | tee ../step-merge-tests.log || {
+            echo -n "::error title=QuickSyncMergeTest failed::"
+            tail -c 8000 ../step-merge-tests.log | python3 -c 'import sys; d=sys.stdin.buffer.read(); sys.stdout.write(d.decode("utf-8","replace").replace("%","%25").replace("\r","%0D").replace("\n","%0A"))'
+            echo
+            exit 1
+          }
 
       - name: Verify and package the installable APK
         shell: bash
         run: |
           set -euo pipefail
-          source='app/build/outputs/apk/preview/app-universal-preview.apk'
+          source='upstream/app/build/outputs/apk/preview/app-universal-preview.apk'
           test -f "$source"
           tools="$ANDROID_HOME/build-tools/35.0.0"
           "$tools/apksigner" verify --print-certs "$source"
@@ -321,15 +165,34 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+      # Publishes from the runner (not your computer) so the APK stays
+      # downloadable from the Releases page until you delete it.
+      - name: Publish the APK to the Releases page
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='quick-sync-v0.1'
+          assets=(apk-deliverable/Komikku-Quick-Sync-0.1-test.apk apk-deliverable/SHA256.txt apk-deliverable/READ-FIRST.txt)
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title 'Komikku Quick Sync 0.1 (test build)' \
+              --notes 'Unofficial experimental build of Komikku v1.14.1 with the Quick Sync feature: automatic library and page-level reading-progress sync between two devices through your own WebDAV/SyncYomi folder. Install the SAME apk on BOTH phones. Keep your original Komikku and its backups. Use a dedicated test folder for sync data. Debug-signed trial build.' \
+              "${assets[@]}"
+          fi
+
       - name: Save test reports if the build fails
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Quick-Sync-test-reports
           path: |
-            domain/build/reports/tests/
-            domain/build/test-results/
-            app/build/reports/tests/
-            app/build/test-results/
+            upstream/domain/build/reports/tests/
+            upstream/domain/build/test-results/
+            upstream/app/build/reports/tests/
+            upstream/app/build/test-results/
           retention-days: 1
           if-no-files-found: ignore

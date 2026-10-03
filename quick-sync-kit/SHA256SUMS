@@ -1,0 +1,5 @@
+bdc824b2563febfe37894cef88c2fd3b0c1935dadbb7f8d8e5a154dce78b380e  ./apply_patch.py
+199a74d5bd707154abf1320d79de785322d7321c4841f7fe548d276c2f9dd575  ./overlay/app/src/main/java/eu/kanade/tachiyomi/data/sync/QuickSync.kt
+5c0974450ae97f0669a4643cedb7e17191667cc5177604cc248ac75db952d985  ./overlay/app/src/test/java/eu/kanade/tachiyomi/data/sync/QuickSyncMergeTest.kt
+35a0c2adfeb0dcbfb094008bf12f0dde8671e588189cd73fe969485c757ac41f  ./overlay/domain/src/main/java/tachiyomi/domain/sync/ProgressStamp.kt
+db0b02d0194c9c7612ef25e3ed8f4351b238761a83ebb61e81d899ee456e36ce  ./overlay/domain/src/test/java/tachiyomi/domain/sync/ProgressStampTest.kt
