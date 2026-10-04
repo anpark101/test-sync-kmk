@@ -38,7 +38,7 @@ restore = app + 'eu/kanade/tachiyomi/data/backup/restore/'
 
 # A side-by-side, telemetry-free test build; never replace the installed original.
 edit('app/build.gradle.kts', 'applicationId = "app.komikku"', 'applicationId = "app.komikku.sync"')
-edit('app/build.gradle.kts', 'versionName = "1.14.1"', 'versionName = "1.14.1-quick-sync-0.1"')
+edit('app/build.gradle.kts', 'versionName = "1.14.1"', 'versionName = "1.14.1-quick-sync-0.2"')
 edit('app/build.gradle.kts', '    lint {', '    testOptions {\n        unitTests.isReturnDefaultValues = true\n    }\n\n    lint {')
 edit('app/src/main/AndroidManifest.xml', 'android:label="@string/app_name"', 'android:label="Komikku Sync Lab"')
 # This retired JitPack artifact no longer exists; upstream is the same API.
@@ -51,7 +51,7 @@ edit(prefs_ui, '                            SyncManager.SyncService.GOOGLE_DRIVE
 edit(prefs_ui, '            getSyncNowPref(),', '''            Preference.PreferenceItem.SwitchPreference(
                 preference = syncPreferences.quickSyncEnabled(),
                 title = "Quick sync (experimental)",
-                subtitle = "Sync on reader exit and app return; wait for saved progress before reading",
+                subtitle = "Sync in the background on reader exit and app return; the reader opens instantly and catches up to the newest page",
             ),
             getSyncNowPref(),''')
 
@@ -340,18 +340,24 @@ edit(app_file, '''        SecureActivityDelegate.onApplicationStopped()
 
 # Await all queued DB page writes before the outgoing sync checkpoint.
 vm = reader + 'ReaderViewModel.kt'
-imports(vm, 'eu.kanade.tachiyomi.data.sync.QuickSync', 'kotlinx.coroutines.Job', 'kotlinx.coroutines.sync.Mutex', 'kotlinx.coroutines.sync.withLock', 'tachiyomi.domain.chapter.interactor.GetChapter')
+imports(vm, 'eu.kanade.tachiyomi.data.sync.QuickSync', 'kotlinx.coroutines.Job', 'kotlinx.coroutines.sync.Mutex', 'kotlinx.coroutines.sync.withLock', 'kotlinx.coroutines.withTimeoutOrNull', 'tachiyomi.domain.chapter.interactor.GetChapter')
 edit(vm, '    private val mutableState = MutableStateFlow(State())', '''    private val pageSaveMutex = Mutex()
     private var lastPageSave: Job? = null
     private var refreshingCloudProgress = false
+    private var userNavigatedDuringRefresh = false
 
     private val mutableState = MutableStateFlow(State())''')
 edit(vm, '''        // Save last page read and mark as read if needed
         viewModelScope.launchNonCancellable {
             updateChapterProgress(selectedChapter, page/* SY --> */, hasExtraPage/* SY <-- */)
         }''', '''        // Do not turn an old, initially rendered page into a newer edit while
-        // refreshing the suspended reader on device switch.
-        if (refreshingCloudProgress) return
+        // refreshing the suspended reader on device switch. If the user turns a
+        // page while the background refresh runs, their position always wins
+        // and the pending jump to the synced page is dropped.
+        if (refreshingCloudProgress) {
+            userNavigatedDuringRefresh = true
+            return
+        }
         lastPageSave = viewModelScope.launchNonCancellable {
             pageSaveMutex.withLock {
                 updateChapterProgress(selectedChapter, page/* SY --> */, hasExtraPage/* SY <-- */)
@@ -360,12 +366,17 @@ edit(vm, '''        // Save last page read and mark as read if needed
 edit(vm, '''            try {
                 val manga = getManga.await(mangaId)''', '''            try {
                 val app = Injekt.get<Application>()
-                if (!getIncognitoState.await(getManga.await(mangaId)?.source) && syncPreferences.quickSyncEnabled().get()) {
-                    val fresh = QuickSync.beforeReading(app)
-                    if (!fresh) withUIContext {
-                        android.widget.Toast.makeText(app, "Cloud sync has not finished. This device may show an older page.", android.widget.Toast.LENGTH_LONG).show()
+                // Open instantly from the local library; page loading must never
+                // wait for the network (Quick Sync 0.2: no black screen). The
+                // background refresh below applies the newer cloud page once it
+                // lands, unless the user already turned a page themselves.
+                if (page == null && !getIncognitoState.await(getManga.await(mangaId)?.source) && syncPreferences.quickSyncEnabled().get()) {
+                    beginCloudRefresh()
+                    viewModelScope.launchNonCancellable {
+                        if (!refreshCloudProgress(incognitoChecked = true)) withUIContext {
+                            android.widget.Toast.makeText(app, "Cloud sync has not finished. This device may show an older page.", android.widget.Toast.LENGTH_LONG).show()
+                        }
                     }
-                    if (fresh && page == null) chapterPageIndex = -1
                 }
                 val manga = getManga.await(mangaId)''')
 edit(vm, '''    fun onActivityFinish() {
@@ -384,23 +395,39 @@ edit(vm, '''    fun onActivityFinish() {
         refreshingCloudProgress = true
     }
 
-    suspend fun refreshCloudProgress(): Boolean {
+    /**
+     * Bounded background catch-up: pages are already on screen when this runs.
+     * Only a merged, newer cloud page is applied; a page the user turned to
+     * while the sync ran keeps priority and the jump is dropped.
+     */
+    suspend fun refreshCloudProgress(incognitoChecked: Boolean = false): Boolean {
         try {
-            if (incognitoMode) return true
+            if (!incognitoChecked && incognitoMode) return true
             lastPageSave?.join()
             val fresh = QuickSync.beforeReading(Injekt.get<Application>())
             if (!fresh) return false
-            val current = state.value.currentChapter ?: return true
+            // The refresh can land before the loader finished: wait briefly for
+            // the chapter so the synced position is not silently dropped.
+            val current = withTimeoutOrNull(10_000) {
+                state.map { it.currentChapter }.filterNotNull().first()
+            } ?: return true
             val id = current.chapter.id ?: return true
             val saved = Injekt.get<GetChapter>().await(id) ?: return false
+            val localPage = current.chapter.last_page_read
+            val syncedPage = saved.lastPageRead.toInt()
             current.chapter.read = saved.read
-            current.chapter.last_page_read = saved.lastPageRead.toInt()
-            chapterPageIndex = saved.lastPageRead.toInt()
-            current.requestedPage = chapterPageIndex
-            eventChannel.send(Event.RestoreSyncedPage(chapterPageIndex))
+            current.chapter.last_page_read = syncedPage
+            if (!userNavigatedDuringRefresh && syncedPage >= 0 && syncedPage != localPage) {
+                chapterPageIndex = syncedPage
+                current.requestedPage = syncedPage
+                // If pages are still loading, the viewer starts at requestedPage;
+                // if they are already shown, seek to the synced position now.
+                if (current.pages != null) eventChannel.send(Event.RestoreSyncedPage(syncedPage))
+            }
             return true
         } finally {
             refreshingCloudProgress = false
+            userNavigatedDuringRefresh = false
         }
     }''')
 edit(vm, '''        data object PageChanged : Event''', '''        data object PageChanged : Event
@@ -419,16 +446,13 @@ activity = reader + 'ReaderActivity.kt'
 edit(activity, '            viewModel.updateHistory()', '            viewModel.checkpointForSync()')
 edit(activity, '''        viewModel.restartReadTimer()
 ''', '''        viewModel.restartReadTimer()
+        // Background catch-up only: resume never blocks the reader behind a
+        // dialog while a sync runs (Quick Sync 0.2).
         if (!viewModel.needsInit() && !viewModel.incognitoMode && Injekt.get<eu.kanade.domain.sync.SyncPreferences>().quickSyncEnabled().get()) {
             viewModel.beginCloudRefresh()
-            viewModel.showLoadingDialog()
             lifecycleScope.launch {
-                try {
-                    if (!viewModel.refreshCloudProgress()) {
-                        toast("Cloud sync has not finished. This device may show an older page.")
-                    }
-                } finally {
-                    viewModel.closeDialog()
+                if (!viewModel.refreshCloudProgress()) {
+                    toast("Cloud sync has not finished. This device may show an older page.")
                 }
             }
         }
@@ -436,26 +460,23 @@ edit(activity, '''        viewModel.restartReadTimer()
 edit(activity, '''                    ReaderViewModel.Event.PageChanged -> {''', '''                    is ReaderViewModel.Event.RestoreSyncedPage -> moveToPageIndex(event.index)
                     ReaderViewModel.Event.PageChanged -> {''')
 
-# Read/resume buttons select the next chapter only AFTER syncing, not before it.
+# Read/resume buttons open immediately again (Quick Sync 0.2); a background
+# sync is scheduled and the open reader jumps to the newest page when it lands.
 library_ui = app + 'eu/kanade/tachiyomi/ui/library/LibraryTab.kt'
 imports(library_ui, 'eu.kanade.tachiyomi.data.sync.QuickSync')
 edit(library_ui, '''                            scope.launchIO {
                                 val chapter = screenModel.getNextUnreadChapter(it.manga)''', '''                            scope.launchIO {
-                                QuickSync.beforeReading(context)
+                                QuickSync.request(context, immediate = true)
                                 val chapter = screenModel.getNextUnreadChapter(it.manga)''')
 manga_ui = app + 'eu/kanade/tachiyomi/ui/manga/MangaScreen.kt'
 imports(manga_ui, 'eu.kanade.tachiyomi.data.sync.QuickSync')
-# The already-present rememberCoroutineScope is named scope in the Content.
 edit(manga_ui, 'onContinueReading = { continueReading(context, screenModel.getNextUnreadChapter()) },', '''onContinueReading = {
-                scope.launch {
-                    QuickSync.beforeReading(context)
-                    kotlinx.coroutines.yield()
-                    continueReading(context, screenModel.getNextUnreadChapter())
-                }
+                QuickSync.request(context, immediate = true)
+                continueReading(context, screenModel.getNextUnreadChapter())
             },''')
 history_ui = app + 'eu/kanade/tachiyomi/ui/history/HistoryTab.kt'
 imports(history_ui, 'eu.kanade.tachiyomi.data.sync.QuickSync')
-edit(history_ui, '''                openChapter(context, screenModel.getNextChapter())''', '''                QuickSync.beforeReading(context)
+edit(history_ui, '''                openChapter(context, screenModel.getNextChapter())''', '''                QuickSync.request(context, immediate = true)
                 openChapter(context, screenModel.getNextChapter())''')
 
 for file in (ROOT / 'overlay').rglob('*'):
@@ -464,4 +485,4 @@ for file in (ROOT / 'overlay').rglob('*'):
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(file, destination)
 
-print('Applied Quick Sync 0.1 to Komikku v1.14.1. Device testing is still required.')
+print('Applied Quick Sync 0.2 to Komikku v1.14.1. Device testing is still required.')

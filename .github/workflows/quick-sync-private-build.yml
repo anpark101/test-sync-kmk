@@ -12,6 +12,7 @@ name: Build Komikku Quick Sync (Private)
   push:
     branches:
       - arena/01a0feed-komikku-test-sync
+      - arena/01a10527-komikku-test-sync
     paths:
       - 'quick-sync-kit/**'
       - '.github/workflows/quick-sync-private-build.yml'
@@ -153,8 +154,8 @@ jobs:
           info=$("$tools/aapt" dump badging "$source")
           echo "$info" | grep "package: name='app.komikku.sync.beta'"
           mkdir -p apk-deliverable
-          cp "$source" apk-deliverable/Komikku-Quick-Sync-0.1-test.apk
-          (cd apk-deliverable && sha256sum Komikku-Quick-Sync-0.1-test.apk > SHA256.txt)
+          cp "$source" apk-deliverable/Komikku-Quick-Sync-0.2-test.apk
+          (cd apk-deliverable && sha256sum Komikku-Quick-Sync-0.2-test.apk > SHA256.txt)
           printf '%s\n' 'Unofficial experimental build. Keep original Komikku and its backups.' 'Install this same APK on BOTH devices. Use a separate WebDAV test folder.' 'This APK is locally debug-signed for a one-off trial; later builds may have a different signing key.' > apk-deliverable/READ-FIRST.txt
 
       - name: Download this APK from the Artifacts section
@@ -173,14 +174,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag='quick-sync-v0.1'
-          assets=(apk-deliverable/Komikku-Quick-Sync-0.1-test.apk apk-deliverable/SHA256.txt apk-deliverable/READ-FIRST.txt)
+          tag='quick-sync-v0.2'
+          assets=(apk-deliverable/Komikku-Quick-Sync-0.2-test.apk apk-deliverable/SHA256.txt apk-deliverable/READ-FIRST.txt)
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
           else
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-              --title 'Komikku Quick Sync 0.1 (test build)' \
-              --notes 'Unofficial experimental build of Komikku v1.14.1 with the Quick Sync feature: automatic library and page-level reading-progress sync between two devices through your own WebDAV/SyncYomi folder. Install the SAME apk on BOTH phones. Keep your original Komikku and its backups. Use a dedicated test folder for sync data. Debug-signed trial build.' \
+              --title 'Komikku Quick Sync 0.2 (test build)' \
+              --notes 'Unofficial experimental build of Komikku v1.14.1 with Quick Sync 0.2: automatic library and page-level reading-progress sync between two devices through your own WebDAV/SyncYomi folder, now without waiting on sync. Chapters and the Start/Resume buttons open instantly; the newest cloud page is applied in the background, and a sync that just finished is reused instead of starting a second one. Install the SAME apk on BOTH phones. Keep your original Komikku and its backups. Use a dedicated test folder for sync data. Debug-signed trial build.' \
               "${assets[@]}"
           fi
 

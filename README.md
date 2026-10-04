@@ -45,8 +45,8 @@ never need a computer.
 
 1. Open this repository on GitHub (the `komikku-test-sync` repo).
 2. Open the **Releases** section — direct link:
-   [`komikku-test-sync/releases/tag/quick-sync-v0.1`](https://github.com/wntrskarina-ux/komikku-test-sync/releases/tag/quick-sync-v0.1)
-3. Download **`Komikku-Quick-Sync-0.1-test.apk`** on **each phone**.
+   [`komikku-test-sync/releases/tag/quick-sync-v0.2`](https://github.com/wntrskarina-ux/komikku-test-sync/releases/tag/quick-sync-v0.2)
+3. Download **`Komikku-Quick-Sync-0.2-test.apk`** on **each phone**.
 
 *If there is no release yet, the build has not finished — see
 [Rebuilding the APK yourself](#rebuilding-the-apk-yourself).*
@@ -96,9 +96,29 @@ That's it — from now on sync happens **automatically**.
 Read normally. Watch for:
 
 * A short **"Sync completed"** notification after you leave a chapter.
-* When you open a chapter, the app first waits for a sync, then jumps to the
-  page the **other phone** last read. If the network is down you will see:
-  *"Cloud sync has not finished. This device may show an older page."*
+* When you open a chapter, it appears **immediately** — no waiting, no black
+  screen — and a moment later the reader jumps to the page the **other phone**
+  last read, once the background sync lands. If the network is down you will
+  see: *"Cloud sync has not finished. This device may show an older page."*
+* The **Start / Resume** buttons react instantly again; the sync for that
+  tap happens in the background.
+
+---
+
+## What's new in Quick Sync 0.2
+
+0.2 fixes the two annoyances found while device-testing 0.1:
+
+| 0.1 behaviour | 0.2 behaviour |
+|---|---|
+| **Black screen when opening a chapter** — the reader waited for a full cloud sync (download → merge → restore → upload) before any page appeared. | Chapter pages appear **instantly** from local data. A background refresh then applies the newer cloud page and the reader seeks to it (you see the jump, never a stall). If you already turned a page yourself, your position wins. |
+| **Slow Start / Resume buttons** — every tap performed a whole sync (often twice in a row right after app start) before the chapter opened. | Taps respond **immediately**: they schedule a background sync and open the reader. The open reader's own background refresh keeps the page correct. |
+| Returning to the reader showed a **blocking loading dialog** during sync. | Resume refreshes silently in the background; you only get a toast if sync could not finish. |
+| Opening the reader right after an app-start sync ran the sync **a second time**. | A sync that completed within the last 15 seconds counts as *fresh* and is reused — no duplicate full cycle. |
+
+The merge rules ("latest edit wins", page clock / library clock) and the sync
+data format are unchanged, so a 0.2 phone and a 0.1 phone can still exchange
+progress. Even so, prefer installing the **same 0.2 APK on both phones**.
 
 ---
 
@@ -167,7 +187,7 @@ both phones always agree on the same winner.
 | `README.md` | This guide. |
 
 The compiled app's package name is `app.komikku.sync.beta`, version
-`1.14.1-quick-sync-0.1…` — that is how you can confirm both phones run the
+`1.14.1-quick-sync-0.2…` — that is how you can confirm both phones run the
 same build (Settings → About in the app).
 
 ---

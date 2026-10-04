@@ -27,17 +27,35 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.util.concurrent.TimeUnit
 
-/** Event-driven scheduling, plus a foreground freshness barrier before reading. */
+/**
+ * Event-driven scheduling, plus a bounded freshness check used by the reader's
+ * background catch-up. Opening a chapter, the Start/Resume buttons and app
+ * resume never wait for a sync: this object only feeds the background refresh
+ * that applies the newest cloud page after pages are already on screen.
+ */
 object QuickSync {
     private const val WORK = "KomikkuQuickSync"
+
+    /** A sync that finished this recently is fresh; do not run a second full cycle. */
+    private const val FRESH_WINDOW_MS = 15_000L
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val queueMutex = Mutex()
     private val syncMutex = Mutex()
     private var pending: Job? = null
     private var pageCheckpoint: Job? = null
 
+    @Volatile
+    private var lastSuccessAt = 0L
+
     private fun enabled(): Boolean = Injekt.get<SyncPreferences>().let {
         it.isSyncEnabled() && it.quickSyncEnabled().get()
+    }
+
+    /** Milliseconds since the last fully completed sync; Long.MAX_VALUE if none. */
+    private fun syncAge(): Long {
+        val done = lastSuccessAt
+        return if (done == 0L) Long.MAX_VALUE else System.currentTimeMillis() - done
     }
 
     @Synchronized
@@ -49,6 +67,8 @@ object QuickSync {
         pending = scope.launch {
             if (!immediate) delay(1500)
             queueMutex.withLock {
+                // A sync that just landed already captures the newest edits.
+                if (syncAge() < FRESH_WINDOW_MS) return@withLock
                 val manager = app.workManager
                 // A queued successor will take its snapshot AFTER the active job.
                 // Do not drop an edit merely because another sync is running.
@@ -83,13 +103,21 @@ object QuickSync {
     suspend fun perform(context: Context): Boolean = withContext(Dispatchers.IO) {
         syncMutex.withLock {
             if (!context.isOnline() || BackupRestoreJob.isRunning(context)) return@withLock false
-            SyncManager(context).syncData()
+            val completed = SyncManager(context).syncData()
+            if (completed) lastSuccessAt = System.currentTimeMillis()
+            completed
         }
     }
 
-    /** The reader must not load a stale page while an asynchronous restore is pending. */
+    /**
+     * Bounded check used only by the reader's background refresh; navigation
+     * code must not call this on a tap path. A sync completed moments ago
+     * counts as fresh and returns immediately instead of running another
+     * download/merge/restore/upload cycle.
+     */
     suspend fun beforeReading(context: Context): Boolean {
         if (!enabled()) return true
+        if (syncAge() < FRESH_WINDOW_MS) return true
         if (!context.isOnline()) {
             request(context, immediate = true)
             return false
