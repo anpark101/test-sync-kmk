@@ -45,8 +45,8 @@ never need a computer.
 
 1. Open this repository on GitHub (the `komikku-test-sync` repo).
 2. Open the **Releases** section — direct link:
-   [`komikku-test-sync/releases/tag/quick-sync-v0.2`](https://github.com/wntrskarina-ux/komikku-test-sync/releases/tag/quick-sync-v0.2)
-3. Download **`Komikku-Quick-Sync-0.2-test.apk`** on **each phone**.
+   [`komikku-test-sync/releases/tag/quick-sync-v0.3`](https://github.com/wntrskarina-ux/komikku-test-sync/releases/tag/quick-sync-v0.3)
+3. Download **`Komikku-Quick-Sync-0.3-test.apk`** on **each phone**.
 
 *If there is no release yet, the build has not finished — see
 [Rebuilding the APK yourself](#rebuilding-the-apk-yourself).*
@@ -102,6 +102,23 @@ Read normally. Watch for:
   see: *"Cloud sync has not finished. This device may show an older page."*
 * The **Start / Resume** buttons react instantly again; the sync for that
   tap happens in the background.
+
+---
+
+## What's new in Quick Sync 0.3
+
+0.3 fixes the **"no extension loads / sources show but pages never load"**
+problem and brings the app current with original Komikku again:
+
+| What changed | Why it matters |
+|---|---|
+| **New Cloudflare bypass** (ported from Mihon, the project Komikku is based on). Old code only recognised challenge pages that today's Cloudflare no longer serves — so protected sources and extension lists just failed, and turning the bypass setting on did nothing. | Sources, extension stores and chapter pages behind Cloudflare load again. Challenges are now detected the official way (the `cf-mitigated` response header) and solved in the background WebView; concurrent requests share one solver instead of piling up. |
+| **Base updated** from Komikku v1.14.1 (July 2026) to Komikku master of 2026-10-11. | Brings in upstream's dependency & security updates (Kotlin 2.4.20, jsoup 1.23.2 security fix, SQLDelight/sqlcipher bumps), the faster bundled SQLite driver, and screen-transition fixes. |
+| Quick Sync behaviour is unchanged. | Same instant-open reader, same background catch-up, same merge rules and sync data format — 0.3 phones can sync with 0.2/0.1 phones. |
+
+The merge rules ("latest edit wins", page clock / library clock) and the sync
+data format are unchanged, so a 0.3 phone and a 0.2/0.1 phone can still exchange
+progress. Even so, prefer installing the **same 0.3 APK on both phones**.
 
 ---
 
@@ -187,7 +204,7 @@ both phones always agree on the same winner.
 | `README.md` | This guide. |
 
 The compiled app's package name is `app.komikku.sync.beta`, version
-`1.14.1-quick-sync-0.2…` — that is how you can confirm both phones run the
+`1.14.1-quick-sync-0.3…` — that is how you can confirm both phones run the
 same build (Settings → About in the app).
 
 ---

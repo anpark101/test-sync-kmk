@@ -1,5 +1,8 @@
-cef96c03874370be43f80406cdc2d60d9e176c31b74fa789e9a7793baecbb001  ./apply_patch.py
-e61147a271e5a3b07fa9baf6d50099bc4dc52819cfbac92c146eaf59fc270eb6  ./overlay/app/src/main/java/eu/kanade/tachiyomi/data/sync/QuickSync.kt
-5c0974450ae97f0669a4643cedb7e17191667cc5177604cc248ac75db952d985  ./overlay/app/src/test/java/eu/kanade/tachiyomi/data/sync/QuickSyncMergeTest.kt
-35a0c2adfeb0dcbfb094008bf12f0dde8671e588189cd73fe969485c757ac41f  ./overlay/domain/src/main/java/tachiyomi/domain/sync/ProgressStamp.kt
-db0b02d0194c9c7612ef25e3ed8f4351b238761a83ebb61e81d899ee456e36ce  ./overlay/domain/src/test/java/tachiyomi/domain/sync/ProgressStampTest.kt
+a96c7c7d6cac04f23db20a131a573c453bf581c1127f70420064418690e16717  apply_patch.py
+e61147a271e5a3b07fa9baf6d50099bc4dc52819cfbac92c146eaf59fc270eb6  overlay/app/src/main/java/eu/kanade/tachiyomi/data/sync/QuickSync.kt
+5c0974450ae97f0669a4643cedb7e17191667cc5177604cc248ac75db952d985  overlay/app/src/test/java/eu/kanade/tachiyomi/data/sync/QuickSyncMergeTest.kt
+bd53a3a240097e2d4b4d304eb0374431cecf1519db8559589e745e02b8b25103  overlay/core/common/src/main/kotlin/eu/kanade/tachiyomi/network/interceptor/CloudflareInterceptor.kt
+6aac85593728beab06f3324cad2987fa1acce8d0b993f2c5b22b4889f6216403  overlay/core/common/src/main/kotlin/eu/kanade/tachiyomi/network/interceptor/WebViewInterceptor.kt
+8206e562fa2c2f8d8232e73a84ad50710c8e76d87c73b63193215a9bb08797c3  overlay/core/common/src/main/kotlin/eu/kanade/tachiyomi/util/system/WebViewUtil.kt
+35a0c2adfeb0dcbfb094008bf12f0dde8671e588189cd73fe969485c757ac41f  overlay/domain/src/main/java/tachiyomi/domain/sync/ProgressStamp.kt
+db0b02d0194c9c7612ef25e3ed8f4351b238761a83ebb61e81d899ee456e36ce  overlay/domain/src/test/java/tachiyomi/domain/sync/ProgressStampTest.kt

@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Apply the experimental Quick Sync patch to exactly Komikku v1.14.1.
+"""Apply the experimental Quick Sync patch to the Komikku source tree.
+
+Base: Komikku master 1656575e8 (2026-10-11, "refactor(MangaDex): Simplify request
+header plumbing (#1930)"). This is newer than the v1.14.1 release: it also carries
+upstream's dependency updates (Kotlin 2.4.20, jsoup security fix, SQLDelight/
+sqlcipher bumps), the AndroidX bundled SQLite driver switch and the screen
+transition fixes.
+
+On top of the Quick Sync changes this also ports the modern Cloudflare bypass
+stack from Mihon (mihonapp/mihon, as released in v0.21.2 / main 2026-10-13):
+challenges are detected through the official `cf-mitigated: challenge` response
+header instead of parsing challenge HTML that current Cloudflare pages no longer
+serve, so browsing Cloudflare-protected sources and extension stores works again.
 Not a phone setup script. End users install the compiled APK, not this file.
 """
 from pathlib import Path
@@ -38,11 +50,38 @@ restore = app + 'eu/kanade/tachiyomi/data/backup/restore/'
 
 # A side-by-side, telemetry-free test build; never replace the installed original.
 edit('app/build.gradle.kts', 'applicationId = "app.komikku"', 'applicationId = "app.komikku.sync"')
-edit('app/build.gradle.kts', 'versionName = "1.14.1"', 'versionName = "1.14.1-quick-sync-0.2"')
+edit('app/build.gradle.kts', 'versionName = "1.14.1"', 'versionName = "1.14.1-quick-sync-0.3"')
 edit('app/build.gradle.kts', '    lint {', '    testOptions {\n        unitTests.isReturnDefaultValues = true\n    }\n\n    lint {')
 edit('app/src/main/AndroidManifest.xml', 'android:label="@string/app_name"', 'android:label="Komikku Sync Lab"')
-# This retired JitPack artifact no longer exists; upstream is the same API.
-edit('gradle/libs.versions.toml', 'flexible-adapter-core = "com.github.arkon.FlexibleAdapter:flexible-adapter:c8013533"', 'flexible-adapter-core = "eu.davidea:flexible-adapter:5.1.0"')
+
+# --- Cloudflare bypass fix (ported from Mihon v0.21.2 / main 2026-10-13) ---
+# The old interceptor only reacted to challenge pages that contained the
+# "challenge-error-title"/"challenge-error-text" markers, which modern Cloudflare
+# challenge pages no longer serve, so sources and extension stores protected by
+# Cloudflare simply failed with an HTTP error and the bypass toggle did nothing.
+# androidx.webkit provides the WebMessage/isolated-world APIs the new
+# CloudflareInterceptor uses; upstream Komikku does not depend on it yet.
+edit('gradle/androidx.versions.toml',
+     'sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }',
+     'sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }\n\nwebkit = "androidx.webkit:webkit:1.17.1"')
+edit('core/common/build.gradle.kts', '    implementation(libs.jsoup)', '    implementation(androidx.webkit)\n\n    implementation(libs.jsoup)')
+
+network_helper = 'core/common/src/main/kotlin/eu/kanade/tachiyomi/network/NetworkHelper.kt'
+imports(network_helper, 'kotlinx.coroutines.CoroutineScope', 'kotlinx.coroutines.Dispatchers', 'kotlinx.coroutines.SupervisorJob')
+edit(network_helper, '''/* SY --> */ open /* SY <-- */ class NetworkHelper(
+    private val context: Context,
+    private val preferences: NetworkPreferences,
+) {''', '''/* SY --> */ open /* SY <-- */ class NetworkHelper(
+    private val context: Context,
+    private val preferences: NetworkPreferences,
+    // Quick Sync kit: app-lifetime scope for the Cloudflare WebView bypass (Mihon).
+    // Defaulted so existing constructions (AppModule, source-api HttpSource) are unchanged.
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
+) {''')
+edit(network_helper, 'CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider)',
+     'CloudflareInterceptor(context, cookieJar, scope, ::defaultUserAgentProvider)', count=2)
+# CloudflareInterceptor.kt / WebViewInterceptor.kt / WebViewUtil.kt are replaced
+# wholesale by the overlay copies (the rewritten Mihon versions, adapted).
 
 # The fork has no upstream Google OAuth client secrets. Do NOT ask users to share
 # OAuth tokens. It supports WebDAV and SyncYomi; use a separate test folder/key.
@@ -485,4 +524,4 @@ for file in (ROOT / 'overlay').rglob('*'):
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(file, destination)
 
-print('Applied Quick Sync 0.2 to Komikku v1.14.1. Device testing is still required.')
+print('Applied Quick Sync 0.3 (Komikku master 1656575e8 + modern Cloudflare bypass) to the source tree. Device testing is still required.')

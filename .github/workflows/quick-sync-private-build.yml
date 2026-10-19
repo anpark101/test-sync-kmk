@@ -13,6 +13,7 @@ name: Build Komikku Quick Sync (Private)
     branches:
       - arena/01a0feed-komikku-test-sync
       - arena/01a10527-komikku-test-sync
+      - arena/2aacc6d5-test-sync-kmk
     paths:
       - 'quick-sync-kit/**'
       - '.github/workflows/quick-sync-private-build.yml'
@@ -39,7 +40,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: komikku-app/komikku
-          ref: e30ff83265d7affcc14e172ea9eadf469db1f4aa
+          ref: 1656575e8fdaaef010c652f9758130c2a01d8890
           path: upstream
           fetch-depth: 0
           persist-credentials: false
@@ -154,8 +155,8 @@ jobs:
           info=$("$tools/aapt" dump badging "$source")
           echo "$info" | grep "package: name='app.komikku.sync.beta'"
           mkdir -p apk-deliverable
-          cp "$source" apk-deliverable/Komikku-Quick-Sync-0.2-test.apk
-          (cd apk-deliverable && sha256sum Komikku-Quick-Sync-0.2-test.apk > SHA256.txt)
+          cp "$source" apk-deliverable/Komikku-Quick-Sync-0.3-test.apk
+          (cd apk-deliverable && sha256sum Komikku-Quick-Sync-0.3-test.apk > SHA256.txt)
           printf '%s\n' 'Unofficial experimental build. Keep original Komikku and its backups.' 'Install this same APK on BOTH devices. Use a separate WebDAV test folder.' 'This APK is locally debug-signed for a one-off trial; later builds may have a different signing key.' > apk-deliverable/READ-FIRST.txt
 
       - name: Download this APK from the Artifacts section
@@ -174,14 +175,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag='quick-sync-v0.2'
-          assets=(apk-deliverable/Komikku-Quick-Sync-0.2-test.apk apk-deliverable/SHA256.txt apk-deliverable/READ-FIRST.txt)
+          tag='quick-sync-v0.3'
+          assets=(apk-deliverable/Komikku-Quick-Sync-0.3-test.apk apk-deliverable/SHA256.txt apk-deliverable/READ-FIRST.txt)
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
           else
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-              --title 'Komikku Quick Sync 0.2 (test build)' \
-              --notes 'Unofficial experimental build of Komikku v1.14.1 with Quick Sync 0.2: automatic library and page-level reading-progress sync between two devices through your own WebDAV/SyncYomi folder, now without waiting on sync. Chapters and the Start/Resume buttons open instantly; the newest cloud page is applied in the background, and a sync that just finished is reused instead of starting a second one. Install the SAME apk on BOTH phones. Keep your original Komikku and its backups. Use a dedicated test folder for sync data. Debug-signed trial build.' \
+              --title 'Komikku Quick Sync 0.3 (test build)' \
+              --notes 'Unofficial experimental build of Komikku (master 2026-10-11) with Quick Sync 0.3: automatic library and page-level reading-progress sync between two devices through your own WebDAV/SyncYomi folder. NEW in 0.3: rebased onto the latest Komikku master (dependency and security updates, bundled SQLite driver, screen-transition fixes) and ports the modern Cloudflare bypass from Mihon v0.21.2 — Cloudflare-protected sources and extension stores now detect the cf-mitigated challenge header and solve challenges through the WebView, which the old build could not do. Install the SAME apk on BOTH phones. Keep your original Komikku and its backups. Use a dedicated test folder for sync data. Debug-signed trial build.' \
               "${assets[@]}"
           fi
 
